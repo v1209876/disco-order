@@ -12,7 +12,7 @@ CONFIG_FILE = "system_config.json"
 
 st.set_page_config(page_title="台大環職部 德克士訂餐系統", layout="wide")
 
-# --- 2. 資料處理函數 (加強 UTF-8 處理) ---
+# --- 2. 資料處理函數 ---
 def load_data(file_path, default_data):
     if os.path.exists(file_path):
         try:
@@ -62,7 +62,7 @@ special_items = {
 regular_menu = [
     ("起司蔬菜牛肉堡", 79, "起司蔬菜牛肉堡.png"), ("檸香雞腿堡", 119, "檸香雞腿堡.png"),
     ("椒香雞腿堡", 119, "椒香雞腿堡.png"), ("黃金Q蝦堡", 139, "黃金Q蝦堡.png"),
-    ("咔滋薯霸(大)", 63, "咔滋薯霸(大).png"), ("黃金薯餅", 38, "黃金薯餅.png"),
+    ("咔滋薯霸(大)","63", "咔滋薯霸(大).png"), ("黃金薯餅", 38, "黃金薯餅.png"),
     ("紫金QQ球", 45, "紫金QQ球.png"), ("咔滋洋蔥圈", 49, "咔滋洋蔥圈.png"),
     ("咔滋啃骨雞(辣味)", 59, "咔滋啃骨雞(辣味).png"), ("冰紅茶(M)", 40, "冰紅茶(M).png"),
     ("無糖綠茶(M)", 40, "無糖綠茶(M).png"), ("經典冰奶茶", 45, "經典冰奶茶.png"),
@@ -70,25 +70,39 @@ regular_menu = [
     ("鮮萃檸檬綠茶", 59, "鮮萃檸檬綠茶.png"), ("現磨美式咖啡(M)", 48, "現磨美式咖啡(M).png")
 ]
 
-# --- 5. 管理後台 ---
+# --- 5. 管理員後台 (新增強制開啟開關) ---
 st.sidebar.title("🔐 管理後台")
 pwd = st.sidebar.text_input("輸入管理密碼", type="password")
+force_on = False
+
 if pwd == "@ntuh121005":
+    st.sidebar.success("管理權限已開啟")
+    force_on = st.sidebar.checkbox("🔥 強制開啟會員日優惠模式 (測試用)")
+    
     with st.sidebar.expander("👥 人員名單管理"):
-        new_name_adm = st.text_input("新增姓名")
-        if st.button("確認新增"):
+        new_name_adm = st.sidebar.text_input("新增人員姓名")
+        if st.sidebar.button("確認新增"):
             if new_name_adm and new_name_adm not in st.session_state.staff:
                 st.session_state.staff.append(new_name_adm)
                 save_data(STAFF_FILE, st.session_state.staff)
                 st.rerun()
-    if st.sidebar.button("🚨 清空所有訂單"):
+    if st.sidebar.button("🚨 清空今日所有訂單"):
         st.session_state.orders = []
         save_data(ORDER_FILE, [])
         st.rerun()
 
-# --- 6. 前台主畫面 ---
+# --- 6. 判定今日是否為會員日 ---
+# 如果今天是 8, 18, 28 或是管理員手動強制開啟
+is_member_day = (now_tpe.day in [8, 18, 28]) or force_on
+
+# --- 7. 前台介面 ---
 st.title("🍔 台大環職部 德克士訂餐系統")
-is_member_day = now_tpe.day in [8, 18, 28]
+if force_on:
+    st.warning("⚠️ 目前處於 [管理員強制開啟會員日模式]，所有品項將套用 +10元多一件 優惠。")
+elif is_member_day:
+    st.success(f"🎉 今天是 {now_tpe.day} 號會員日！已自動套用 +10元多一件 優惠。")
+else:
+    st.info(f"📅 今日 ({now_tpe.day}號) 為一般時段。會員日優惠僅限 8, 18, 28 號。")
 
 # 湊對看板
 st.subheader("📢 湊對即時看板")
@@ -101,13 +115,13 @@ if st.session_state.orders:
         for i, (name, count) in enumerate(odd_items.items()):
             cols[i % 5].warning(f"**{name}**\n目前 {count} 份\n⚠️ 差 1 人湊對")
     else:
-        st.success("✅ 目前所有品項皆已成雙！享+10元優惠中")
+        st.success("✅ 目前所有品項皆已成雙！")
 else:
     st.info("目前還沒有人點餐")
 
 st.divider()
 
-# --- 7. 點餐與精確取消功能 ---
+# --- 8. 點餐與取消 ---
 col_u, col_c = st.columns([2, 1.2])
 with col_u:
     st.subheader("👤 第一步：誰要點餐？")
@@ -128,35 +142,30 @@ with col_c:
                 st.session_state.orders.pop(idx_to_del)
                 save_data(ORDER_FILE, st.session_state.orders)
                 st.rerun()
-        else:
-            st.caption("您目前沒有點餐記錄")
 
-# --- 8. 菜單顯示 ---
+# --- 9. 菜單顯示 ---
 st.subheader("🍕 第二步：選擇餐點")
-today_spec = special_items.get(now_tpe.day)
-f_menu = [("⭐今日限定", today_spec[0], today_spec[1], today_spec[2])] if today_spec else []
+today_spec = special_items.get(now_tpe.day) if (now_tpe.day in [8, 18, 28]) else None
+# 如果是強制開啟模式，隨便選一個 8 號當作限定品顯示，或維持原本邏輯
+f_menu = []
+if today_spec:
+    f_menu.append(("⭐今日限定", today_spec[0], today_spec[1], today_spec[2]))
+elif force_on:
+    # 測試模式下顯示所有可能的主打
+    f_menu.append(("⭐測試-8日主打", "咔滋脆皮炸雞", 75, "咔滋脆皮炸雞.png"))
+
 f_menu += [("常規品項", m[0], m[1], m[2]) for m in regular_menu]
 
-# 顯示網格
 cols = st.columns(4)
 for idx, (tag, name, price, img_file) in enumerate(f_menu):
     with cols[idx % 4]:
-        # 修正：不要使用單行 if/else 呼叫 streamlit 指令
-        if "⭐" in tag:
-            st.error(tag)
-        else:
-            st.caption(tag)
-            
+        if "⭐" in tag: st.error(tag)
+        else: st.caption(tag)
         img_p = os.path.join("img", img_file)
-        if os.path.exists(img_p):
-            st.image(img_p, use_container_width=True)
-        else:
-            st.warning(f"缺少圖片: {img_file}")
-            
+        if os.path.exists(img_p): st.image(img_p, use_container_width=True)
         st.write(f"**{name}** | ${price}")
         if st.button("點選", key=f"btn_{idx}"):
-            if final_user in ["--請選擇--", ""]:
-                st.error("請提供姓名")
+            if final_user in ["--請選擇--", ""]: st.error("請提供姓名")
             else:
                 if final_user not in st.session_state.staff:
                     st.session_state.staff.append(final_user)
@@ -167,7 +176,7 @@ for idx, (tag, name, price, img_file) in enumerate(f_menu):
                 save_data(ORDER_FILE, st.session_state.orders)
                 st.rerun()
 
-# --- 9. 統計與金額計算 ---
+# --- 10. 統計與金額計算 ---
 st.divider()
 st.subheader("📋 目前點餐名單 (個人總計)")
 
@@ -179,16 +188,17 @@ if st.session_state.orders:
     
     for item_name, count in item_counts.items():
         base_p = price_map.get(item_name, 0)
-        # 會員日金額邏輯
         if is_member_day:
+            # 優惠計算：(每兩份 89元) + (落單的一份 原價) -> 以 79元堡為例
+            # 通用公式：(成對數 * (原價+10)) + (餘數 * 原價)
             total_cost = ((count // 2) * (base_p + 10)) + ((count % 2) * base_p)
         else:
             total_cost = count * base_p
         
         avg_price_map[item_name] = total_cost / count
-        item_summary_list.append({"品項": item_name, "總數": int(count), "原價": int(base_p), "小計": int(total_cost)})
+        item_summary_list.append({"品項": item_name, "總數": int(count), "單價(原價)": int(base_p), "小計": int(total_cost)})
 
-    # A. 個人汇总 (一人一列)
+    # 個人彙整
     person_list = []
     for p_name in sorted(df['姓名'].unique()):
         p_items = df[df['姓名'] == p_name]['餐點'].tolist()
@@ -198,7 +208,6 @@ if st.session_state.orders:
     
     st.table(pd.DataFrame(person_list))
 
-    # B. 品項彙整
     st.subheader("📊 品項彙整 (收錢核對用)")
     st.table(pd.DataFrame(item_summary_list))
     
