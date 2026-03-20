@@ -3,6 +3,7 @@ import pandas as pd
 from datetime import datetime, timedelta, timezone
 import json
 import os
+import math
 
 # --- 1. 基本設定與時區 (UTC+8) ---
 tz = timezone(timedelta(hours=8)) 
@@ -25,6 +26,10 @@ def load_data(file_path, default_data):
 def save_data(file_path, data):
     with open(file_path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
+
+# 標準四捨五入函數 (解決 0.5 取偶問題)
+def standard_round(n):
+    return int(n + 0.5)
 
 # 初始化資料
 initial_staff = ["文鴻", "舒荻", "卓憲", "序立", "述辰", "秉高", "其家", "茵婕", "品妤", "宛霖", "廷恩", "虹彣", "立涵", "喬菲", "智葳", "芸華", "立潔", "薇諠", "馥戎"]
@@ -62,7 +67,7 @@ special_items = {
 regular_menu = [
     ("起司蔬菜牛肉堡", 79, "起司蔬菜牛肉堡.png"), ("檸香雞腿堡", 119, "檸香雞腿堡.png"),
     ("椒香雞腿堡", 119, "椒香雞腿堡.png"), ("黃金Q蝦堡", 139, "黃金Q蝦堡.png"),
-    ("咔滋薯霸(大)","63", "咔滋薯霸(大).png"), ("黃金薯餅", 38, "黃金薯餅.png"),
+    ("咔滋薯霸(大)", "63", "咔滋薯霸(大).png"), ("黃金薯餅", 38, "黃金薯餅.png"),
     ("紫金QQ球", 45, "紫金QQ球.png"), ("咔滋洋蔥圈", 49, "咔滋洋蔥圈.png"),
     ("咔滋啃骨雞(辣味)", 59, "咔滋啃骨雞(辣味).png"), ("冰紅茶(M)", 40, "冰紅茶(M).png"),
     ("無糖綠茶(M)", 40, "無糖綠茶(M).png"), ("經典冰奶茶", 45, "經典冰奶茶.png"),
@@ -70,14 +75,14 @@ regular_menu = [
     ("鮮萃檸檬綠茶", 59, "鮮萃檸檬綠茶.png"), ("現磨美式咖啡(M)", 48, "現磨美式咖啡(M).png")
 ]
 
-# --- 5. 管理員後台 (新增強制開啟開關) ---
+# --- 5. 管理員後台 ---
 st.sidebar.title("🔐 管理後台")
 pwd = st.sidebar.text_input("輸入管理密碼", type="password")
 force_on = False
 
 if pwd == "@ntuh121005":
     st.sidebar.success("管理權限已開啟")
-    force_on = st.sidebar.checkbox("🔥 強制開啟會員日優惠模式 (測試用)")
+    force_on = st.sidebar.checkbox("🔥 強制開啟會員日優惠模式")
     
     with st.sidebar.expander("👥 人員名單管理"):
         new_name_adm = st.sidebar.text_input("新增人員姓名")
@@ -91,18 +96,15 @@ if pwd == "@ntuh121005":
         save_data(ORDER_FILE, [])
         st.rerun()
 
-# --- 6. 判定今日是否為會員日 ---
-# 如果今天是 8, 18, 28 或是管理員手動強制開啟
+# 判定今日是否為會員日
 is_member_day = (now_tpe.day in [8, 18, 28]) or force_on
 
-# --- 7. 前台介面 ---
+# --- 6. 前台介面 ---
 st.title("🍔 台大環職部 德克士訂餐系統")
 if force_on:
-    st.warning("⚠️ 目前處於 [管理員強制開啟會員日模式]，所有品項將套用 +10元多一件 優惠。")
+    st.warning("⚠️ 目前處於 [管理員強制開啟會員日模式]")
 elif is_member_day:
-    st.success(f"🎉 今天是 {now_tpe.day} 號會員日！已自動套用 +10元多一件 優惠。")
-else:
-    st.info(f"📅 今日 ({now_tpe.day}號) 為一般時段。會員日優惠僅限 8, 18, 28 號。")
+    st.success(f"🎉 今天是 {now_tpe.day} 號會員日！已套用 +10元多一件 優惠")
 
 # 湊對看板
 st.subheader("📢 湊對即時看板")
@@ -121,7 +123,7 @@ else:
 
 st.divider()
 
-# --- 8. 點餐與取消 ---
+# --- 7. 點餐與取消 ---
 col_u, col_c = st.columns([2, 1.2])
 with col_u:
     st.subheader("👤 第一步：誰要點餐？")
@@ -143,16 +145,14 @@ with col_c:
                 save_data(ORDER_FILE, st.session_state.orders)
                 st.rerun()
 
-# --- 9. 菜單顯示 ---
+# --- 8. 菜單顯示 ---
 st.subheader("🍕 第二步：選擇餐點")
 today_spec = special_items.get(now_tpe.day) if (now_tpe.day in [8, 18, 28]) else None
-# 如果是強制開啟模式，隨便選一個 8 號當作限定品顯示，或維持原本邏輯
 f_menu = []
 if today_spec:
     f_menu.append(("⭐今日限定", today_spec[0], today_spec[1], today_spec[2]))
 elif force_on:
-    # 測試模式下顯示所有可能的主打
-    f_menu.append(("⭐測試-8日主打", "咔滋脆皮炸雞", 75, "咔滋脆皮炸雞.png"))
+    f_menu.append(("⭐測試-主打品", "咔滋脆皮炸雞", 75, "咔滋脆皮炸雞.png"))
 
 f_menu += [("常規品項", m[0], m[1], m[2]) for m in regular_menu]
 
@@ -176,7 +176,7 @@ for idx, (tag, name, price, img_file) in enumerate(f_menu):
                 save_data(ORDER_FILE, st.session_state.orders)
                 st.rerun()
 
-# --- 10. 統計與金額計算 ---
+# --- 9. 統計與金額計算 (修正進位邏輯) ---
 st.divider()
 st.subheader("📋 目前點餐名單 (個人總計)")
 
@@ -189,8 +189,6 @@ if st.session_state.orders:
     for item_name, count in item_counts.items():
         base_p = price_map.get(item_name, 0)
         if is_member_day:
-            # 優惠計算：(每兩份 89元) + (落單的一份 原價) -> 以 79元堡為例
-            # 通用公式：(成對數 * (原價+10)) + (餘數 * 原價)
             total_cost = ((count // 2) * (base_p + 10)) + ((count % 2) * base_p)
         else:
             total_cost = count * base_p
@@ -198,13 +196,15 @@ if st.session_state.orders:
         avg_price_map[item_name] = total_cost / count
         item_summary_list.append({"品項": item_name, "總數": int(count), "單價(原價)": int(base_p), "小計": int(total_cost)})
 
-    # 個人彙整
+    # 個人彙整 (修正進位處)
     person_list = []
     for p_name in sorted(df['姓名'].unique()):
         p_items = df[df['姓名'] == p_name]['餐點'].tolist()
         detail = ", ".join([f"{it} x{p_items.count(it)}" for it in set(p_items)])
         total_p = sum(avg_price_map[it] for it in p_items)
-        person_list.append({"姓名": p_name, "點餐內容": detail, "應付總金額": int(round(total_p, 0))})
+        # 使用自定義標準四捨五入函數
+        final_pay = standard_round(total_p)
+        person_list.append({"姓名": p_name, "點餐內容": detail, "應付總金額": final_pay})
     
     st.table(pd.DataFrame(person_list))
 
