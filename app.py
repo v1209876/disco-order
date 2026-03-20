@@ -5,9 +5,10 @@ import json
 import os
 
 # --- 1. 基本設定與時區 ---
-tz = timezone(timedelta(hours=8)) # UTC+8 台北時間
+tz = timezone(timedelta(hours=8)) 
 STAFF_FILE = "staff_list.json"
 ORDER_FILE = "orders_data.json"
+CONFIG_FILE = "system_config.json" # 用來紀錄上次重置的日期
 
 st.set_page_config(page_title="台大環職部 德克士訂餐系統", layout="wide")
 
@@ -31,7 +32,21 @@ if 'staff' not in st.session_state:
 if 'orders' not in st.session_state:
     st.session_state.orders = load_data(ORDER_FILE, [])
 
-# --- 3. 菜單資料定義 ---
+# --- 3. 自動換日重置邏輯 ---
+now_tpe = datetime.now(tz)
+today_str = now_tpe.strftime("%Y-%m-%d")
+config = load_data(CONFIG_FILE, {"last_reset_date": today_str})
+
+if config["last_reset_date"] != today_str:
+    # 如果日期變了，清空訂單
+    st.session_state.orders = []
+    save_data(ORDER_FILE, [])
+    # 更新重置日期
+    config["last_reset_date"] = today_str
+    save_data(CONFIG_FILE, config)
+    st.toast("🌞 偵測到新的一天，已自動重置訂餐表！")
+
+# --- 4. 菜單資料定義 ---
 special_items = {
     8: ("咔滋脆皮炸雞", 75, "咔滋脆皮炸雞.png"),
     18: ("超級酪乳雞腿堡", 149, "超級酪乳雞腿堡.png"),
@@ -57,7 +72,7 @@ regular_menu = [
     ("現磨美式咖啡(M)", 48, "現磨美式咖啡(M).png")
 ]
 
-# --- 4. 側邊欄：管理後台 ---
+# --- 5. 側邊欄：管理後台 ---
 st.sidebar.title("🔐 管理後台")
 pwd = st.sidebar.text_input("輸入管理密碼", type="password")
 
@@ -78,19 +93,18 @@ if pwd == "@ntuh121005":
                 save_data(STAFF_FILE, st.session_state.staff)
                 st.rerun()
 
-    if st.sidebar.button("🚨 清空所有點餐數據"):
+    if st.sidebar.button("🚨 清空所有點餐數據 (立即強制重置)"):
         st.session_state.orders = []
         save_data(ORDER_FILE, [])
         st.rerun()
 elif pwd != "":
     st.sidebar.error("密碼錯誤")
 
-# --- 5. 前台點餐介面 ---
+# --- 6. 前台點餐介面 ---
 st.title("🍔 台大環職部 | 德克士會員日點餐系統")
-now_tpe = datetime.now(tz)
 st.write(f"📅 今日日期：{now_tpe.strftime('%Y-%m-%d')} | 會員日：每月 8, 18, 28 號")
 
-# --- 5.1 湊對看板 ---
+# --- 6.1 湊對看板 ---
 st.subheader("📢 湊對即時看板 (單數品項提醒)")
 if st.session_state.orders:
     all_selected = [o['餐點'] for o in st.session_state.orders]
@@ -108,11 +122,11 @@ else:
 
 st.divider()
 
-# --- 5.2 點餐操作 ---
-col_user, col_empty = st.columns([1, 2])
+# --- 6.2 點餐與取消操作 ---
+col_user, col_cancel = st.columns([2, 1])
+
 with col_user:
     st.subheader("👤 第一步：誰要點餐？")
-    # 這裡加入一個「新增姓名」的選項
     user_options = ["--請選擇--", "➕ 新增姓名 (不在名單中)"] + sorted(st.session_state.staff)
     selected_user_type = st.selectbox("請選擇或新增您的姓名", user_options)
     
@@ -122,6 +136,22 @@ with col_user:
         final_user_name = new_guest_name
     elif selected_user_type != "--請選擇--":
         final_user_name = selected_user_type
+
+with col_cancel:
+    # 這裡放取消功能
+    st.subheader("⚠️ 點錯了？")
+    if final_user_name and final_user_name != "➕ 新增姓名 (不在名單中)":
+        my_orders = [idx for idx, o in enumerate(st.session_state.orders) if o['姓名'] == final_user_name]
+        if my_orders:
+            if st.button(f"撤回 {final_user_name} 的最後一筆訂單"):
+                st.session_state.orders.pop(my_orders[-1])
+                save_data(ORDER_FILE, st.session_state.orders)
+                st.warning("已成功撤回訂單")
+                st.rerun()
+        else:
+            st.caption("您目前沒有點餐記錄")
+    else:
+        st.caption("請先選擇姓名以使用撤回功能")
 
 st.subheader("🍕 第二步：選擇餐點 (點擊下方按鈕即可送出)")
 
@@ -156,12 +186,10 @@ for idx, (tag, name, price, img_file) in enumerate(final_menu):
             if final_user_name == "" or selected_user_type == "--請選擇--":
                 st.error("❌ 請先在上方提供您的姓名！")
             else:
-                # 如果是新名字，自動加入名單
                 if final_user_name not in st.session_state.staff:
                     st.session_state.staff.append(final_user_name)
                     save_data(STAFF_FILE, st.session_state.staff)
                 
-                # 紀錄點餐
                 new_entry = {
                     "姓名": final_user_name,
                     "餐點": name,
@@ -170,12 +198,11 @@ for idx, (tag, name, price, img_file) in enumerate(final_menu):
                 st.session_state.orders.append(new_entry)
                 save_data(ORDER_FILE, st.session_state.orders)
                 st.balloons()
-                st.success(f"✅ {final_user_name} 已點購 {name}")
                 st.rerun()
 
-# --- 6. 後台統計清單 ---
+# --- 7. 後台統計清單 ---
 st.divider()
-st.subheader("📋 目前點餐名單 (供統計者核對)")
+st.subheader("📋 目前點餐明單 (供統計者核對)")
 if st.session_state.orders:
     df_display = pd.DataFrame(st.session_state.orders)
     st.dataframe(df_display, use_container_width=True)
@@ -185,6 +212,4 @@ if st.session_state.orders:
     summary_df.columns = ['餐點', '總份數']
     st.table(summary_df)
 else:
-    st.write("暫無資料")
-
-st.info("💡 湊對提醒：若看到上方看板顯示「⚠️ 還差 1 人」，代表該餐點目前為單數。您可以點選該品項來幫助同事湊到 +10 元多一件的優惠！")
+    st.write("目前尚無點餐資料")
